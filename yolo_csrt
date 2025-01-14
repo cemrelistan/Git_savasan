@@ -1,0 +1,87 @@
+import cv2
+from ultralytics import YOLO
+
+
+# YOLO modelini yükle
+model = YOLO("/home/cello/Desktop/savasan/Yarisma_Son/Models/v10son.pt")
+
+# Video kaynağını aç
+video_path = "/home/cello/Desktop/savasan/videolar/fpv1.mp4"  # Kamera için '0', video dosyası için yol (örneğin "video.mp4")
+cap = cv2.VideoCapture(video_path)
+
+# CSRT Tracker
+tracker = cv2.legacy.TrackerCSRT_create()
+initBB = None  # Takip edilecek obje için başlangıç çerçevesi
+
+
+class YOLOCSRT:
+    def __init__(self, model):
+        self.model = model
+        self.tracker = cv2.legacy.TrackerCSRT_create()
+        self.bbox = None
+        self.tracking = False
+
+    def yolo_detect(self, frame):
+        """
+        YOLO kullanarak nesne algılama
+        """
+        results = self.model(frame)
+        detections = results[0].boxes.data.cpu().numpy()
+
+        if len(detections) > 0:
+            # En yüksek güvene sahip algılamayı seç
+            best_detection = max(detections, key=lambda x: x[4])
+            x1, y1, x2, y2, conf, cls = best_detection
+            self.bbox = (int(x1), int(y1), int(x2 - x1), int(y2 - y1))
+            cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+            self.tracking = False  # Eğer YOLO bulursa CSRT'yi unut
+            return True
+        return False
+
+    def csrt_track(self, frame):
+        """
+        CSRT Tracker ile nesne takibi
+        """
+        if not self.tracking or self.bbox is None:
+            return False
+
+        success, box = self.tracker.update(frame)
+        if success:
+            x, y, w, h = map(int, box)
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+        return success
+
+    def process_frame(self, frame):
+        """
+        Frame üzerinde YOLO veya CSRT ile işlem yap
+        """
+        if not self.yolo_detect(frame):  # YOLO algılayamazsa CSRT kullan
+            if not self.tracking and self.bbox is not None:
+                self.tracker = cv2.legacy.TrackerCSRT_create()
+                self.tracker.init(frame, self.bbox)
+                self.tracking = True
+            else:
+                self.csrt_track(frame)
+
+
+# YOLOCSRT sınıfını başlat
+detector_tracker = YOLOCSRT(model)
+
+while cap.isOpened():
+    ret, frame = cap.read()
+    if not ret:
+        print("Video akışı sonlandı!")
+        break
+
+    frame = cv2.resize(frame, (640, 480))  # Çözünürlük ayarı
+    detector_tracker.process_frame(frame)
+
+    # Çerçeveyi göster
+    cv2.imshow("YOLO + CSRT Tracking", frame)
+
+    # 'q' ile çıkış
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
