@@ -8,6 +8,7 @@ import ast  # Redis'ten gelen string'i listeye çevirmek için
 class Detection:
     def __init__(self):
         self.model = YOLO("/home/cello/Desktop/savasan/Yarisma_Son/Models/v10son.pt").to("cuda")
+        print("aaa")
         self.rh = RedisHelper()
         self.r = self.rh.r
 
